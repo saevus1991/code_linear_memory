@@ -7,3 +7,9 @@
 # pyhton related files
 .python-version
 *.pyc
+
+# data stores
+*.pt
+*.pth
+*.np
+*.npz

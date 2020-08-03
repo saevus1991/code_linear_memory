@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-import sys
+import os
 import matplotlib.pyplot as plt
 #from torchdiffeq import odeint
 from torchdiffeq import odeint_adjoint as odeint
@@ -68,23 +68,38 @@ data = sol[0::15]
 
 # optimizer 
 params = model.parameters()
-optimizer = torch.optim.SGD(params, lr=2e-10, momentum=0.99)
+#optimizer = torch.optim.SGD(params, lr=1e-10)
+optimizer = torch.optim.LBFGS(params, lr=1e-2)
 
+def loss_fn(predict, data):
+    loss = torch.sum(((predict-data)/(data+1))**2)
+    return(loss)
 
-# # fit
-# epochs = 0
-# msg = 'Loss in epoch {0} is {1}'
-# for i in range(epochs):
-#     optimizer.zero_grad()
-#     predict = odeint(model, moment_initial, t_data)
-#     #loss = torch.sum((data-predict)**2/torch.sum(data**2, axis=0, keepdim=True))
-#     loss = torch.sum(((data-predict)/(data+1))**2)
-#     loss.backward()
-#     optimizer.step()
-#     print(msg.format(i, loss.item()))
-# with torch.no_grad():
-#     sol_final = odeint(model, moment_initial, t_eval)
+def closure():
+    if torch.is_grad_enabled():
+        optimizer.zero_grad()
+    predict = odeint(model, moment_initial, t_data)
+    loss = loss_fn(predict, data)
+    if loss.requires_grad:
+        loss.backward()
+    return(loss)
 
+# fit
+max_epoch = 20
+loss_history = []
+save_path = os.path.dirname(os.path.realpath(__file__)) + '/data/linear_memory_train.pt'
+msg = 'Loss in epoch {0} is {1}'
+for epoch in range(max_epoch):
+    loss = optimizer.step(closure)
+    loss_history.append(loss.item())
+    print(msg.format(epoch, loss.item()))
+    # save
+    torch.save({'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss_history': torch.tensor(loss_history)}, save_path)
+with torch.no_grad():
+    sol_final = odeint(model, moment_initial, t_eval)
 
 # # plot
 # for i in range(8):
