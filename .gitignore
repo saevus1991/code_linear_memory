@@ -1,0 +1,9 @@
+# system stuff
+.DS_Store
+
+# vscode
+.vscode
+
+# pyhton related files
+.python-version
+*.pyc
