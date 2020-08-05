@@ -1,9 +1,12 @@
 import numpy as np
 import torch
 import os
+import sys
 import matplotlib.pyplot as plt
 #from torchdiffeq import odeint
 from torchdiffeq import odeint_adjoint as odeint
+
+sys.path.append('/home/cwildne/code/linear_memory')
 from linear_memory.linear_memory import LinearMemory
 import linear_memory.utils as ut
 from import_utils import add_path
@@ -72,27 +75,52 @@ params = model.parameters()
 optimizer = torch.optim.LBFGS(params, lr=1e-2)
 
 def loss_fn(predict, data):
+    predict = odeint(model, moment_initial, t_data)
     loss = torch.sum(((predict-data)/(data+1))**2)
+    return(loss)
+
+def loss_stat(model, data):
+    mean = data.mean(axis=0)
+    loss = torch.sum(model.forward(0.0, mean)**2)
+    return(loss)
+
+def l1(model):
+    loss = 0.0
+    for p in model.parameters():
+        loss += torch.abs(p).sum()
+    return(loss)
+
+def l2(model):
+    loss = 0.0
+    for p in model.parameters():
+        loss += torch.sum(p**2)
     return(loss)
 
 def closure():
     if torch.is_grad_enabled():
         optimizer.zero_grad()
-    predict = odeint(model, moment_initial, t_data)
-    loss = loss_fn(predict, data)
+    loss = loss_fn(model, data) + 10*l1(model)
     if loss.requires_grad:
-        loss.backward()
+        try:
+            loss.backward()
+        except:
+            print("Error during backpropgation")
     return(loss)
 
 # fit
-max_epoch = 20
+max_epoch = 500
 loss_history = []
-save_path = os.path.dirname(os.path.realpath(__file__)) + '/data/linear_memory_train.pt'
+save_path = os.path.dirname(os.path.realpath(__file__)) + '/data/learn_linear_ode_train.pt'
 msg = 'Loss in epoch {0} is {1}'
 for epoch in range(max_epoch):
     loss = optimizer.step(closure)
     loss_history.append(loss.item())
+    with torch.no_grad():
+        #loss1 = loss_stat(model, data)
+        loss2 = 10*l1(model)
     print(msg.format(epoch, loss.item()))
+    #print('Stationary loss is {}'.format(loss1))
+    print('Parameter loss is {}'.format(loss2))
     # save
     torch.save({'epoch': epoch,
                 'model_state_dict': model.state_dict(),

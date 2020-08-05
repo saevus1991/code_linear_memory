@@ -8,6 +8,7 @@ def add_path(name):
     """
     # set up list of hosts with path
     host_list = {
+        'nemesis.bcs.e-technik.tu-darmstadt.de': '/Users/christian/Documents/Code/',
         'nemesis.local': '/Users/christian/Documents/Code/',
         'gauss': '/home/cwildne/code/',
         'weyl': '/home/cwildne/code/',

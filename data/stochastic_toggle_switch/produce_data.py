@@ -17,7 +17,7 @@ sys.path.append(pymbvi_path)
 from pymbvi.models.observation.kinetic_obs_model import LognormObs
 
 # fix seed
-np.random.seed(2007211011)
+np.random.seed(2008061030)
 
 file_path = '/Users/christian/Documents/Code/pyssa/pyssa/models/collection/stochastic_repressilator.xlsx'
 df = pd.ExcelFile(file_path).parse()
@@ -28,9 +28,9 @@ pre, post, rates = sm.get_standard_model("stochastic_toggle_switch")
 # prepare initial conditions
 initial = np.zeros(8)
 initial[1] = 1
-initial[2] = 10
-initial[3] = 300
-initial[4] = 1
+#initial[2] = 10
+#initial[3] = 300
+initial[5] = 1
 tspan = np.array([0.0, 200*60*60])
 t_plot = np.linspace(tspan[0], tspan[1], 200)
 
