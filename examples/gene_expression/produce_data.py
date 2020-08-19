@@ -1,7 +1,9 @@
 import sys
 import numpy as np 
+import torch
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+from torchdiffeq import odeint_adjoint as odeint
 
 pyssa_path = '/Users/christian/Documents/Code/pyssa'
 sys.path.append(pyssa_path)
@@ -14,6 +16,21 @@ from pyssa.models.cle_model import RREModel
 pymbvi_path = '/Users/christian/Documents/Code/pymbvi'
 sys.path.append(pymbvi_path)
 from pymbvi.models.observation.kinetic_obs_model import LognormObs
+from pymbvi.util import autograd_jacobian
+from pymbvi.models.mjp.autograd_partition_specific_models import SimpleGeneExpression
+
+
+class LinearODE(torch.nn.Module):
+
+    def __init__(self, A, b):
+        super(LinearODE, self).__init__()
+        self.A = torch.nn.Parameter(A.clone())
+        self.b = torch.nn.Parameter(b.clone())
+
+    def forward(self, time, state):
+        dydt = self.A @ state + self.b
+        return(dydt)
+
 
 # fix seed
 np.random.seed(2007141048)
@@ -23,23 +40,35 @@ pre, post, rates = sm.get_standard_model("simple_gene_expression")
 pre = np.array(pre, dtype=np.float64)
 post = np.array(post, dtype=np.float64)
 rates = np.array(rates)
-initial = np.array([1.0, 0.0, 0.0, 0.0])
+initial = np.array([0.0, 1.0, 0.0, 0.0])
 tspan = np.array([0.0, 5000.0])
+t_plot = np.linspace(tspan[0], tspan[1], 20)
 
 # number of trajectories
-num_samples = 1000
-
-# prepare initial conditions
-initial = np.array([0.0, 1.0, 0.0, 0.0])
-tspan = np.array([0.0, 5e3])
-t_plot = np.linspace(tspan[0], tspan[1], 20)
+num_samples = 10000
 
 # compute ODE mean
 rre_model = RREModel(pre, post, rates)
 def odefun(time, state):
-    return( rre_model.eval(state, time) )
+    return(rre_model.eval(state, time) )
 sol = solve_ivp(odefun, tspan, initial, t_eval=t_plot)
 states_rre = sol['y'].T
+
+# set up moment model
+moment_initial = np.zeros(9)
+moment_initial[0:3] = initial[1:4]
+mbvi_model = SimpleGeneExpression(moment_initial, np.log(rates), tspan)
+moment_initial = torch.tensor(moment_initial)
+def fun(state):
+    tmp = mbvi_model.forward_torch(0.0, state, torch.zeros(rates.shape), mbvi_model.rates)
+    return(tmp)
+A_true = autograd_jacobian(fun, moment_initial)
+b_true = fun(torch.zeros(moment_initial.shape))
+model = LinearODE(A_true, b_true)
+
+# compute moment solution
+with torch.no_grad():
+    states_mb = odeint(model, moment_initial, torch.from_numpy(t_plot))
 
 # set up an observation model
 sigma = np.array([0.15])
@@ -53,12 +82,16 @@ t_obs = np.arange(tspan[0]+0.5*delta_t, tspan[1], delta_t)
 data = {}
 data['rates'] = rates
 data['initial'] = initial
+data['moment_initial'] = moment_initial.numpy()
+data['A_true'] = A_true.numpy()
+data['b_true'] = b_true.numpy()
 data['num_samples'] = num_samples
 data['tspan'] = tspan
 data['t_plot'] = t_plot
 data['delta_t'] = delta_t
 data['t_obs'] = t_obs
 data['states_rre'] = states_rre
+data['states_mb'] = states_mb
 
 for i in range(num_samples):
 

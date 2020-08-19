@@ -8,6 +8,8 @@ from linear_memory.linear_memory import LinearMemory
 import linear_memory.utils as ut
 from import_utils import add_path
 
+torch.set_default_dtype(torch.float64)
+
 add_path('pyssa')
 import pyssa.ssa as ssa
 import pyssa.models.standard_models as sm

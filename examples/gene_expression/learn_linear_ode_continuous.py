@@ -133,7 +133,7 @@ model.b = torch.nn.Parameter(1e-6*torch.randn(model.b.shape))
 # optimizer 
 params = model.parameters()
 #optimizer = torch.optim.SGD(params, lr=1e-9)
-optimizer = torch.optim.LBFGS(params, lr=1e-3)
+optimizer = torch.optim.LBFGS(params, lr=1, line_search_fn='strong_wolfe')
 
 # def loss_fn(predict, data):
 #     loss = torch.sum(((predict-data)/(data+1))**2)
@@ -149,7 +149,7 @@ def closure():
     if torch.is_grad_enabled():
         optimizer.zero_grad()
     predict = odeint(model, moment_initial, t_data)
-    loss = 10*predict[-1, -1] + l1(model)
+    loss = 10*predict[-1, -1] + 10*l1(model)
     if loss.requires_grad:
         loss.backward()
     return(loss)
@@ -162,7 +162,10 @@ msg = 'Loss in epoch {0} is {1}'
 for epoch in range(max_epoch):
     loss = optimizer.step(closure)
     loss_history.append(loss.item())
+    with torch.no_grad():
+        loss2 = 10*l1(model)
     print(msg.format(epoch, loss.item()))
+    print('Parameter loss is {}'.format(loss2))
     # save
     torch.save({'epoch': epoch,
                 'model_state_dict': model.state_dict(),
