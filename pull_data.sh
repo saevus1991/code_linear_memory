@@ -2,7 +2,7 @@
 
 host_name="gauss"
 
-scp ${host_name}:./code/linear_memory/tests/data/*.pt ./tests/data/
+scp ${host_name}:./code/linear_memory/examples/gene_expression/learn_linear_ode_minibatch.pt ./examples/gene_expression/
 
 echo "Fetched data from $host_name!"
 

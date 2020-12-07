@@ -1,9 +1,13 @@
 import sys
 import os
+from pathlib import Path
 import numpy as np 
 import torch
 import matplotlib.pyplot as plt
 from torchdiffeq import odeint_adjoint as odeint
+
+workdir = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(workdir))
 from import_utils import add_path
 
 add_path('pyssa')
@@ -12,7 +16,7 @@ add_path('pyssa')
 import pyssa.util as ut
 
 torch.set_default_dtype(torch.float64)
-torch.manual_seed(2008181714)
+torch.manual_seed(2008181715)
 
 # load data
 load_path = os.path.dirname(os.path.realpath(__file__)) + '/data.npz'
@@ -46,8 +50,6 @@ def get_moments(trajectories):
 # get noise estimates via bootstrapping
 batch_size = 100
 num_iter = 1000
-#mean_ssa = np.zeros((num_steps, num_species))
-#cov_ssa = np.zeros((num_steps, num_species, num_species))
 states_mean = np.zeros((num_steps, int(num_species*(num_species+3)/2)))
 states_err = np.zeros((num_steps, int(num_species*(num_species+3)/2)))
 np.random.seed(2008181434)
@@ -56,22 +58,12 @@ for i in range(num_iter):
     tmp = trajectories[samples]
     mean_tmp = get_moments(tmp)
     states_mean += mean_tmp/num_iter
-    #mean_tmp, cov_tmp = ut.get_stats(tmp)
-    #mean_ssa += mean_tmp/num_iter
-    #cov_ssa += cov_tmp/num_iter
-#mean_ssa_err = np.zeros((num_steps, num_species))
-#cov_ssa_err = np.zeros((num_steps, num_species, num_species))
 np.random.seed(2008181434)
 for i in range(num_iter):
     samples = np.random.randint(num_samples, size=(batch_size,))
     tmp = trajectories[samples]
-    #mean_tmp, cov_tmp = ut.get_stats(tmp)
-    #mean_ssa_err += (mean_tmp - mean_ssa)**2/num_iter
-    #cov_ssa_err += (cov_tmp - cov_ssa)**2/num_iter
     mean_tmp = get_moments(tmp)
     states_err += (mean_tmp-states_mean)**2/num_iter
-#states_mean = np.concatenate([mean_ssa, np.stack([cov_ssa[:, i, j] for i in range(3) for j in range(i, 3)]).T], axis=1)
-#states_err = np.concatenate([mean_ssa_err, np.stack([cov_ssa_err[:, i, j] for i in range(3) for j in range(i, 3)]).T], axis=1)
 states_err = np.sqrt(states_err)
 
 # set up  model 
@@ -91,22 +83,8 @@ model = LinearODE(torch.zeros(A_true.shape), torch.zeros(b_true.shape))
 
 # optimizer 
 params = model.parameters()
-#optimizer = torch.optim.Adam(params, lr=1e-5)
-optimizer = torch.optim.SGD(params, lr=1e-12, momentum=0.9)
-    
-# # plot
-# for i in range(3):
-#     plt.subplot(3, 3, i+1)
-#     plt.plot(t_plot, mean_ssa[:, i], '-g')
-#     plt.fill_between(t_plot, mean_ssa[:, i] - np.sqrt(mean_ssa_err[:, i]), mean_ssa[:, i] + np.sqrt(mean_ssa_err[:, i]), color='g', alpha=0.2)
-# cnt = 4
-# for i in range(3):
-#     for j in range(i+1):
-#         plt.subplot(3, 3, cnt)
-#         plt.plot(t_plot, cov_ssa[:, i, j], '-g')
-#         plt.fill_between(t_plot, cov_ssa[:, i, j] - np.sqrt(cov_ssa_err[:, i, j]), cov_ssa[:, i, j] + np.sqrt(cov_ssa_err[:, i, j]), color='g', alpha=0.2)
-#         cnt += 1
-# plt.show()
+optimizer = torch.optim.Adam(params, lr=1e-4, amsgrad=True)
+#optimizer = torch.optim.SGD(params, lr=1e-11, momentum=0.9)
 
 #set up dataload
 dataloader = torch.utils.data.DataLoader(trajectories, batch_size=batch_size, shuffle=True)
@@ -136,39 +114,36 @@ def closure():
 
 
 # perform training
-max_epoch = 100
+max_epoch = 200
 loss_history = []
-save_path = 'learn_linear_ode_minibatch.pt'
+save_path = os.path.dirname(os.path.realpath(__file__)) + '/learn_linear_ode_minibatch.pt'
 msg = 'Loss in epoch {0} is {1}'
 for epoch in range(max_epoch):
     running_loss = 0.0
     for data in dataloader:
         loss = optimizer.step(closure)
         running_loss += loss.item()*(batch_size/num_samples)
-        with torch.no_grad():
-            test = l1(model)
+        # with torch.no_grad():
+        #     test = l1(model)
         print(loss.item())
-        print(test.item())
+        # print(test.item())
     loss_history.append(running_loss)
     print(msg.format(epoch, running_loss))
     # save
     torch.save({'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'loss_history': torch.tensor(loss_history)}, save_path)
+                'loss_history': torch.tensor(loss_history),
+                'states_mean': torch.from_numpy(states_mean),
+                'states_err': torch.from_numpy(states_err)}, save_path)
 with torch.no_grad():
     sol_final = odeint(model, moment_initial, torch.from_numpy(t_plot))
 print(loss_history)
 
-for i in range(9):
-    plt.subplot(3, 3, i+1)
-    plt.plot(t_plot, states_mean[:, i], '-g')
-    #plt.plot(t_plot, states_mb[:, i], '-r')
-    plt.plot(t_plot, sol_final[:, i], '-r')
-    plt.fill_between(t_plot, states_mean[:, i] - states_err[:, i], states_mean[:, i] + states_err[:, i], color='g', alpha=0.2)
-plt.show()
-
-# plt.plot(t_plot, 100*mean_ssa[:, 1], '-k')
-# plt.plot(t_plot, mean_ssa[:, 2], '-b')
-# plt.plot(t_plot, mean_ssa[:, 3], '-r')
+# for i in range(9):
+#     plt.subplot(3, 3, i+1)
+#     plt.plot(t_plot, states_mean[:, i], '-g')
+#     #plt.plot(t_plot, states_mb[:, i], '-r')
+#     plt.plot(t_plot, sol_final[:, i], '-r')
+#     plt.fill_between(t_plot, states_mean[:, i] - states_err[:, i], states_mean[:, i] + states_err[:, i], color='g', alpha=0.2)
 # plt.show()
